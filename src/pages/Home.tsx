@@ -11,6 +11,8 @@ import { Lock, Loader2, Shield, Paperclip, X } from "lucide-react";
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useAction, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 export default function Home() {
   const [promptText, setPromptText] = useState("");
@@ -25,6 +27,18 @@ export default function Home() {
   
   const { isConnected, signer } = useWallet();
   const navigate = useNavigate();
+  const uploadToIPFS = useAction(api.ipfs.uploadToCID);
+  const cacheProof = useMutation(api.web3.cacheProof);
+
+  // Helper function to convert File to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = error => reject(error);
+    });
+  };
 
   const handlePromptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -82,28 +96,92 @@ export default function Home() {
         throw new Error("Unable to connect to blockchain network. Please check your wallet connection and try again.");
       }
 
+      // --- 1. PREPARE DATA ---
+      toast.info("Preparing data for upload...");
+      
+      const promptFile = promptFiles[0];
+      const promptFileData = promptFile ? await fileToBase64(promptFile) : undefined;
+      
+      const responseFile = aiResponseFiles[0];
+      const responseFileData = responseFile ? await fileToBase64(responseFile) : undefined;
+
+      // --- 2. UPLOAD PROMPT & CONTENT VIA CONVEX ---
+      toast.info("Uploading prompt & content to IPFS...");
+      
+      const promptCid = await uploadToIPFS({
+        text: promptText,
+        fileData: promptFileData,
+        fileName: promptFile?.name
+      });
+
+      const contentCid = await uploadToIPFS({
+        text: aiResponseText,
+        fileData: responseFileData,
+        fileName: responseFile?.name
+      });
+
+      // --- 3. GENERATE & UPLOAD METADATA ---
+      toast.info("Generating NFT metadata...");
+      
+      const metadataJson = {
+        name: `Autho.D.oX Proof #${Date.now()}`,
+        description: `Proof of authorship for: ${promptText.substring(0, 50)}...`,
+        image: (responseFile && /\.(jpg|jpeg|png|gif|svg|webp)$/i.test(responseFile.name)) 
+          ? `ipfs://${contentCid}` 
+          : undefined,
+        attributes: [
+          { trait_type: "Prompt CID", value: promptCid },
+          { trait_type: "Content CID", value: contentCid },
+          { trait_type: "Author", value: await signer.getAddress() },
+          { trait_type: "Timestamp", value: Math.floor(Date.now() / 1000) },
+          { trait_type: "Chat Link", value: chatLink || "N/A" }
+        ]
+      };
+
+      const metadataCid = await uploadToIPFS({
+        text: JSON.stringify(metadataJson)
+      });
+
+      // --- 4. CALL SMART CONTRACT ---
+      toast.info("Sending transaction to blockchain... Please confirm in wallet.");
+      
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
       
-      toast.info("Preparing transaction...");
-      
-      // Combine text and file names for prompt and AI response
-      const promptCid = promptText + (promptFiles.length > 0 ? ` [Files: ${promptFiles.map(f => f.name).join(", ")}]` : "");
-      const contentCid = aiResponseText + (aiResponseFiles.length > 0 ? ` [Files: ${aiResponseFiles.map(f => f.name).join(", ")}]` : "");
-      
-      // Call registerProof with the required parameters
-      // _promptCid: Prompt text + files
-      // _contentCid: AI Response text + files
-      // _metadataUri: Empty string (can be populated later if needed)
-      // _optionalChatLink: Chat link (optional)
       const tx = await contract.registerProof(
         promptCid,
         contentCid,
-        "",
+        metadataCid,
         chatLink || ""
       );
       
       toast.info("Waiting for confirmation...");
-      await tx.wait();
+      const receipt = await tx.wait();
+      
+      // Extract tokenId from the ProofRegistered event
+      const event = receipt.logs
+        .map((log: any) => {
+          try {
+            return contract.interface.parseLog(log);
+          } catch {
+            return null;
+          }
+        })
+        .find((e: any) => e && e.name === "ProofRegistered");
+      
+      const tokenId = event ? Number(event.args.tokenId) : 0;
+      
+      // --- 5. CACHE TO CONVEX DB ---
+      toast.info("Caching proof data...");
+      await cacheProof({
+        promptCid,
+        contentCid,
+        metadataUri: metadataCid,
+        optionalChatLink: chatLink || "",
+        author: await signer.getAddress(),
+        timestamp: Math.floor(Date.now() / 1000),
+        tokenId,
+        txHash: receipt.hash,
+      });
       
       toast.success("Asset Registered!", {
         description: "Your Autho.D.oX Security Badge has been minted",
@@ -115,7 +193,6 @@ export default function Home() {
     } catch (error) {
       console.error("Transaction failed:", error);
       
-      // Provide more specific error messages
       let errorMessage = "Please try again";
       
       if (error instanceof Error) {

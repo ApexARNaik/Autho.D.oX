@@ -3,16 +3,15 @@ import { Navbar } from "@/components/Navbar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/hooks/use-wallet";
-import { CONTRACT_ABI, CONTRACT_ADDRESS, formatAddress, formatTimestamp, getExplorerUrl } from "@/lib/web3";
+import { formatAddress, formatTimestamp, getExplorerUrl } from "@/lib/web3";
 import { motion } from "framer-motion";
-import { ethers } from "ethers";
 import { Database, ExternalLink, Loader2, User, Clock, Shield, Link as LinkIcon } from "lucide-react";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 interface RegisteredAsset {
-  promptCid: string; // Asset URL
-  contentCid: string; // Notes/Description
+  promptCid: string;
+  contentCid: string;
   metadataUri: string;
   optionalChatLink: string;
   author: string;
@@ -21,100 +20,13 @@ interface RegisteredAsset {
 }
 
 export default function Gallery() {
-  const [assets, setAssets] = useState<RegisteredAsset[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const { provider, chainId, isConnected } = useWallet();
-
-  useEffect(() => {
-    if (isConnected && provider) {
-      // Verify network before loading
-      provider.getNetwork().then((network) => {
-        console.log("Gallery - Connected to chain ID:", network.chainId);
-        loadAssets();
-      }).catch((err) => {
-        console.error("Gallery - Network check failed:", err);
-        toast.error("Unable to verify blockchain network connection");
-        setIsLoading(false);
-      });
-    } else {
-      setIsLoading(false);
-    }
-  }, [provider, isConnected]);
-
-  const loadAssets = async () => {
-    if (!isConnected || !provider) {
-      setIsLoading(false);
-      return;
-    }
-    
-    setIsLoading(true);
-    try {
-      // Verify we have a valid provider and network
-      const network = await provider.getNetwork();
-      console.log("Connected to network:", network.chainId);
-
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-      
-      // Get the NFT contract to query total supply
-      const nftContractAddress = await contract.nftContract();
-      
-      // Create a simple ABI for the NFT contract to get totalSupply
-      const nftAbi = [
-        "function totalSupply() view returns (uint256)",
-        "function tokenURI(uint256 tokenId) view returns (string)"
-      ];
-      const nftContract = new ethers.Contract(nftContractAddress, nftAbi, provider);
-      
-      const totalSupply = await nftContract.totalSupply();
-      const totalSupplyNumber = Number(totalSupply);
-      
-      // Fetch all registered assets by tokenId
-      const assetPromises = [];
-      for (let i = 1; i <= totalSupplyNumber; i++) {
-        assetPromises.push(
-          contract.proofData(i).then(async (data: any) => {
-            // Get the token URI for the NFT image
-            let tokenUri = "";
-            try {
-              tokenUri = await nftContract.tokenURI(i);
-            } catch (e) {
-              console.error(`Failed to get tokenURI for token ${i}:`, e);
-            }
-            
-            return {
-              promptCid: data.promptCid,
-              contentCid: data.contentCid,
-              metadataUri: tokenUri || data.metadataUri,
-              optionalChatLink: data.optionalChatLink,
-              author: data.author,
-              timestamp: Number(data.timestamp),
-              tokenId: i,
-            };
-          })
-        );
-      }
-      
-      const loadedAssets = await Promise.all(assetPromises);
-      setAssets(loadedAssets.reverse()); // Show newest first
-    } catch (error) {
-      console.error("Failed to load assets:", error);
-      
-      // Provide more specific error messages
-      if (error instanceof Error) {
-        if (error.message.includes("network")) {
-          toast.error("Network error - Please ensure you're connected to the correct blockchain network");
-        } else if (error.message.includes("contract")) {
-          toast.error("Contract error - Unable to connect to the smart contract");
-        } else {
-          toast.error(`Failed to load assets: ${error.message}`);
-        }
-      } else {
-        toast.error("Failed to load registered assets from blockchain");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const { chainId, isConnected } = useWallet();
+  
+  // Load proofs from Convex database (much faster than blockchain)
+  const cachedProofs = useQuery(api.web3.getAllProofs);
+  
+  const isLoading = cachedProofs === undefined;
+  const assets: RegisteredAsset[] = cachedProofs || [];
 
   return (
     <div className="min-h-screen">
@@ -157,20 +69,8 @@ export default function Gallery() {
             </h1>
           </div>
 
-          {/* Not Connected State */}
-          {!isConnected && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-center py-20"
-            >
-              <p className="text-xl font-mono text-pink-400 mb-4">⚠ Wallet Not Connected</p>
-              <p className="text-sm font-mono text-gray-400">Please connect your wallet to view registered assets.</p>
-            </motion.div>
-          )}
-
           {/* Loading State */}
-          {isConnected && isLoading && (
+          {isLoading && (
             <div className="flex justify-center items-center py-20">
               <Loader2 className="h-12 w-12 animate-spin text-cyan-400" />
               <span className="ml-4 text-xl font-mono text-gray-400">LOADING ASSETS...</span>
@@ -178,7 +78,7 @@ export default function Gallery() {
           )}
 
           {/* Empty State */}
-          {isConnected && !isLoading && assets.length === 0 && (
+          {!isLoading && assets.length === 0 && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -190,7 +90,7 @@ export default function Gallery() {
           )}
 
           {/* Assets Grid */}
-          {isConnected && !isLoading && assets.length > 0 && (
+          {!isLoading && assets.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {assets.map((asset, index) => (
                 <motion.div
@@ -231,7 +131,7 @@ export default function Gallery() {
                           <span className="font-mono text-gray-400">Asset URL:</span>
                         </div>
                         <a
-                          href={asset.promptCid}
+                          href={`https://gateway.pinata.cloud/ipfs/${asset.promptCid}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-cyan-400 font-mono text-sm hover:text-cyan-300 transition-colors break-all line-clamp-2"

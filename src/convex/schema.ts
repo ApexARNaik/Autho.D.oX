@@ -34,11 +34,17 @@ const schema = defineSchema(
 
     // Proofs table for backup/caching blockchain data
     proofs: defineTable({
-      prompt: v.string(),
-      submitter: v.string(),
-      txHash: v.string(),
+      promptCid: v.string(),
+      contentCid: v.string(),
+      metadataUri: v.string(),
+      optionalChatLink: v.string(),
+      author: v.string(),
       timestamp: v.number(),
-    }).index("by_submitter", ["submitter"]),
+      tokenId: v.number(),
+      txHash: v.string(),
+    })
+      .index("by_author", ["author"])
+      .index("by_tokenId", ["tokenId"]),
   },
   {
     schemaValidation: false,

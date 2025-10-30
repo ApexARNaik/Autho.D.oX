@@ -2,11 +2,12 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
-import { PinataSDK } from "pinata";
+import PinataSDK from "@pinata/sdk";
+import { Readable } from "stream";
 
+// Initialize the Pinata SDK
 const pinata = new PinataSDK({
-  pinataJwt: process.env.PINATA_JWT!,
-  pinataGateway: process.env.PINATA_GATEWAY || "gateway.pinata.cloud",
+  pinataJWTKey: process.env.PINATA_JWT!,
 });
 
 export const uploadToCID = action({
@@ -19,16 +20,18 @@ export const uploadToCID = action({
     try {
       // Case 1: Only text
       if (args.text && !args.fileData) {
-        const file = new File([args.text], "content.txt", { type: "text/plain" });
-        const upload = await (pinata.upload as any).file(file);
+        const textStream = Readable.from(args.text);
+        const options = { pinataMetadata: { name: "content.txt" } };
+        const upload = await pinata.pinFileToIPFS(textStream, options);
         return upload.IpfsHash;
       }
       
       // Case 2: Only file
       if (!args.text && args.fileData && args.fileName) {
         const buffer = Buffer.from(args.fileData, "base64");
-        const file = new File([buffer], args.fileName);
-        const upload = await (pinata.upload as any).file(file);
+        const fileStream = Readable.from(buffer);
+        const options = { pinataMetadata: { name: args.fileName } };
+        const upload = await pinata.pinFileToIPFS(fileStream, options);
         return upload.IpfsHash;
       }
       
@@ -36,8 +39,9 @@ export const uploadToCID = action({
       if (args.text && args.fileData && args.fileName) {
         // Upload file first
         const buffer = Buffer.from(args.fileData, "base64");
-        const file = new File([buffer], args.fileName);
-        const fileUpload = await (pinata.upload as any).file(file);
+        const fileStream = Readable.from(buffer);
+        const fileOptions = { pinataMetadata: { name: args.fileName } };
+        const fileUpload = await pinata.pinFileToIPFS(fileStream, fileOptions);
         
         // Create JSON with text and file CID
         const jsonData = {
@@ -47,14 +51,15 @@ export const uploadToCID = action({
           timestamp: new Date().toISOString(),
         };
         
-        const jsonUpload = await (pinata.upload as any).json(jsonData);
+        const jsonOptions = { pinataMetadata: { name: `${args.fileName}_meta.json` } };
+        const jsonUpload = await pinata.pinJSONToIPFS(jsonData, jsonOptions);
         return jsonUpload.IpfsHash;
       }
       
-      throw new Error("Invalid input");
+      throw new Error("Invalid input: No text or file data provided.");
     } catch (error) {
       console.error("IPFS upload error:", error);
-      throw error;
+      throw new Error(`IPFS Upload Failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   },
 });
