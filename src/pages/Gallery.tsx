@@ -166,7 +166,7 @@ export default function Gallery() {
                           className="w-full bg-gradient-to-r from-cyan-500/20 to-pink-500/20 hover:from-cyan-500/30 hover:to-pink-500/30 border border-cyan-400/50 text-cyan-400 font-mono text-xs"
                         >
                           <a
-                            href={getExplorerUrl(`${asset.tokenId}`, chainId || 1)}
+                            href={getExplorerUrl(asset.txHash, chainId || 80002)}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
