@@ -87,13 +87,32 @@ export default function Home() {
 
       toast.info("Verifying network connection...");
       
+      // Define the correct network (Polygon Amoy Testnet)
+      const correctChainId = 80002; 
       let network;
+      
       try {
         network = await provider.getNetwork();
         console.log("Connected to network:", network.chainId);
+
+        // --- THIS IS THE FIX ---
+        // Check if the network ID is correct
+        if (network.chainId !== correctChainId) {
+          toast.error("Wrong Network", {
+            description: `Please switch to Polygon Amoy Testnet (Chain ID: ${correctChainId}) in your wallet.`
+          });
+          setIsSubmitting(false); // Stop the loading spinner
+          return; // Stop the function from continuing
+        }
+        // --- END OF FIX ---
+
       } catch (networkError) {
         console.error("Network verification failed:", networkError);
-        throw new Error("Unable to connect to blockchain network. Please check your wallet connection and try again.");
+        toast.error("Network Error", {
+          description: "Unable to connect to blockchain network. Please check your wallet and try again."
+        });
+        setIsSubmitting(false); // Stop the loading spinner
+        return; // Stop the function
       }
 
       // --- 1. PREPARE DATA ---
