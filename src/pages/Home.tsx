@@ -170,10 +170,7 @@ export default function Home() {
         promptCid,
         contentCid,
         metadataCid,
-        chatLink || "",
-        {
-          gas: 3000000, // Explicitly set a high gas limit for file uploads
-        }
+        chatLink || ""
       );
       
       toast.info("Waiting for confirmation...");
