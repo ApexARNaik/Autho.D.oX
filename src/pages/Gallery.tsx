@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { Database, ExternalLink, Loader2, User, Clock, Shield, Link as LinkIcon } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { IpfsContent } from "@/components/IpfsContent";
 
 interface RegisteredAsset {
   promptCid: string;
@@ -124,36 +125,23 @@ export default function Gallery() {
                         </div>
                       )}
 
-                      {/* Asset URL */}
+                      {/* Prompt Content */}
                       <div>
                         <div className="flex items-center gap-2 text-xs mb-2">
                           <LinkIcon className="h-3 w-3 text-cyan-400" />
-                          <span className="font-mono text-gray-400">Asset URL:</span>
+                          <span className="font-mono text-gray-400">Prompt:</span>
                         </div>
-                        <a
-                          href={`https://gateway.pinata.cloud/ipfs/${asset.promptCid}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-cyan-400 font-mono text-sm hover:text-cyan-300 transition-colors break-all line-clamp-2"
-                          style={{
-                            textShadow: "0 0 5px rgba(0, 255, 255, 0.3)",
-                          }}
-                        >
-                          {asset.promptCid}
-                        </a>
-                      </div>
+                        <IpfsContent cid={asset.promptCid} />
+                       </div>
 
-                      {/* Description */}
+                      {/* AI Response Content */}
                       {asset.contentCid && (
                         <div>
-                          <p
-                            className="text-white font-mono text-sm leading-relaxed line-clamp-3"
-                            style={{
-                              textShadow: "0 0 5px rgba(0, 255, 255, 0.3)",
-                            }}
-                          >
-                            "{asset.contentCid}"
-                          </p>
+                          <div className="flex items-center gap-2 text-xs mb-2">
+                            <LinkIcon className="h-3 w-3 text-cyan-400" />
+                            <span className="font-mono text-gray-400">Response:</span>
+                          </div>
+                          <IpfsContent cid={asset.contentCid} />
                         </div>
                       )}
 
