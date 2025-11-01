@@ -293,6 +293,7 @@ export const getExplorerUrl = (txHash: string, chainId: number = 1): string => {
     1: "https://etherscan.io",
     137: "https://polygonscan.com",
     80001: "https://mumbai.polygonscan.com",
+	80002: "https://www.oklink.com/amoy",
   };
   return `${explorers[chainId] || explorers[1]}/tx/${txHash}`;
 };

@@ -18,6 +18,7 @@ interface RegisteredAsset {
   author: string;
   timestamp: number;
   tokenId: number;
+  txHash: string;
 }
 
 export default function Gallery() {
