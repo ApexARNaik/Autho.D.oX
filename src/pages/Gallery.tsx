@@ -5,12 +5,24 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/hooks/use-wallet";
 import { CONTRACT_ABI, CONTRACT_ADDRESS, formatAddress, formatTimestamp, getExplorerUrl } from "@/lib/web3";
 import { motion } from "framer-motion";
-import { Database, ExternalLink, Loader2, User, Clock, Shield, Link as LinkIcon, AlertTriangle } from "lucide-react";
+import { Database, ExternalLink, Loader2, User, Clock, Shield, Link as LinkIcon, AlertTriangle, Search } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import { IpfsContent } from "@/components/IpfsContent"; // We are reusing the component from our last fix
+import { IpfsContent } from "@/components/IpfsContent";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
 
 // This interface now includes txHash (which can be empty for old proofs)
 interface RegisteredAsset {
@@ -25,27 +37,47 @@ interface RegisteredAsset {
 }
 
 export default function Gallery() {
-  const { chainId, provider, isConnected } = useWallet(); // Get the provider from the wallet
+  const { chainId, provider } = useWallet();
   
+  // --- NEW STATE ---
+  // This state will hold the address we want to filter by.
+  // If it's `null`, we show all proofs.
+  const [filterAddress, setFilterAddress] = useState<string | null>(null);
+  // This state is just for the text inside the dialog's input box
+  const [searchAddress, setSearchAddress] = useState("");
+  // --- END NEW STATE ---
+
   // 1. Get NEW proofs from our fast Convex cache
-  const cachedProofs = useQuery(api.web3.getAllProofs);
+  // We now fetch conditionally.
+  const allCachedProofs = useQuery(
+    api.web3.getAllProofs,
+    filterAddress ? "skip" : undefined // If filtering, skip this query
+  );
+  const filteredCachedProofs = useQuery(
+    api.web3.getProofsByAuthor,
+    filterAddress ? { author: filterAddress } : "skip" // If not filtering, skip this query
+  );
   
+  // Use whichever list is active
+  const cachedProofs = filterAddress ? filteredCachedProofs : allCachedProofs;
+
   // 2. Create state to hold OLD proofs we find on the blockchain
   const [oldProofs, setOldProofs] = useState<RegisteredAsset[]>([]);
   const [isBlockchainLoading, setIsBlockchainLoading] = useState(true);
 
-  // 3. This effect runs when the wallet connects and provider is available
+  // 3. This effect runs when the wallet connects OR when the filterAddress changes
   useEffect(() => {
     
     // Function to read all old proofs directly from the smart contract
-    const fetchOldProofs = async () => {
+    const fetchOldProofs = async (addressToFilter: string | null) => {
       if (!provider) {
         setIsBlockchainLoading(false);
         return;
       }
       
-      console.log("Fetching old proofs from blockchain...");
+      console.log(addressToFilter ? `Fetching proofs for ${addressToFilter}...` : "Fetching all old proofs...");
       setIsBlockchainLoading(true);
+      setOldProofs([]); // Clear old proofs before fetching new ones
 
       try {
         const registryContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
@@ -80,6 +112,13 @@ export default function Gallery() {
         for (let i = 0; i < totalSupply; i++) {
           const proof = await registryContract.proofData(i);
           
+          // --- NEW FILTER LOGIC ---
+          // If we have a filter and the author doesn't match, skip this proof.
+          if (addressToFilter && proof.author.toLowerCase() !== addressToFilter.toLowerCase()) {
+            continue; 
+          }
+          // --- END NEW FILTER LOGIC ---
+          
           // Format the on-chain data to match our 'RegisteredAsset' type
           foundProofs.push({
             tokenId: i,
@@ -94,7 +133,7 @@ export default function Gallery() {
         }
         
         setOldProofs(foundProofs);
-        console.log("Finished fetching old proofs.");
+        console.log(`Finished fetching ${foundProofs.length} proofs.`);
 
       } catch (error) {
         console.error("Error fetching old proofs:", error);
@@ -103,8 +142,8 @@ export default function Gallery() {
       }
     };
 
-    fetchOldProofs();
-  }, [provider]); // This whole function runs when 'provider' changes
+    fetchOldProofs(filterAddress);
+  }, [provider, filterAddress]); // This effect now re-runs when filterAddress changes
 
   // 4. Combine and de-duplicate the lists
   const getCombinedAssets = () => {
@@ -121,7 +160,8 @@ export default function Gallery() {
   };
 
   const assets: RegisteredAsset[] = getCombinedAssets();
-  const isLoading = cachedProofs === undefined && isBlockchainLoading;
+  // Update loading state to check the correct query
+  const isLoading = (filterAddress ? filteredCachedProofs === undefined : allCachedProofs === undefined) && isBlockchainLoading;
 
   return (
     <div className="min-h-screen">
@@ -164,6 +204,71 @@ export default function Gallery() {
             </h1>
           </div>
 
+          {/* --- NEW BUTTONS --- */}
+          <motion.div 
+            className="flex justify-center gap-4 mb-12"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+          >
+            <Button 
+              onClick={() => setFilterAddress(null)} 
+              variant={!filterAddress ? "default" : "outline"}
+              className="font-mono bg-cyan-500/20 text-cyan-400 border-cyan-400/50 hover:bg-cyan-500/30 data-[state=open]:bg-cyan-500/30"
+            >
+              <Database className="mr-2 h-4 w-4" />
+              Show All Proofs
+            </Button>
+            
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant={filterAddress ? "default" : "outline"}
+                  className="font-mono bg-pink-500/20 text-pink-400 border-pink-400/50 hover:bg-pink-500/30 data-[state=open]:bg-pink-500/30"
+                >
+                  <Search className="mr-2 h-4 w-4" />
+                  View by Address
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-black/90 border-cyan-500/50 text-white font-mono">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-cyan-400">Search by Wallet Address</AlertDialogTitle>
+                  <AlertDialogDescription className="text-gray-400">
+                    Paste any wallet address (like yours!) to see all proofs registered by that user.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <Input 
+                  placeholder="0x..."
+                  value={searchAddress}
+                  onChange={(e) => setSearchAddress(e.target.value)}
+                  className="bg-black/70 border-pink-500/30 text-white font-mono"
+                />
+                <AlertDialogFooter>
+                  <AlertDialogCancel asChild>
+                    <Button variant="outline" className="font-mono text-gray-400" onClick={() => setSearchAddress("")}>Cancel</Button>
+                  </AlertDialogCancel>
+                  <AlertDialogAction asChild>
+                    <Button 
+                      onClick={() => { 
+                        if (ethers.isAddress(searchAddress)) {
+                          setFilterAddress(searchAddress); 
+                          setSearchAddress("");
+                        } else {
+                          alert("Invalid wallet address");
+                        }
+                      }} 
+                      className="font-mono bg-cyan-500 text-black hover:bg-cyan-600"
+                    >
+                      Search
+                    </Button>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </motion.div>
+          {/* --- END NEW BUTTONS --- */}
+
+
           {/* Loading State */}
           {isLoading && (
             <div className="flex justify-center items-center py-20">
@@ -179,8 +284,17 @@ export default function Gallery() {
               animate={{ opacity: 1 }}
               className="text-center py-20"
             >
-              <p className="text-xl font-mono text-gray-400">No assets registered yet.</p>
-              <p className="text-sm font-mono text-gray-500 mt-2">Be the first to register an asset!</p>
+              <p className="text-xl font-mono text-gray-400">
+                {filterAddress ? "No assets found for this address." : "No assets registered yet."}
+              </p>
+              {!filterAddress && (
+                <p className="text-sm font-mono text-gray-500 mt-2">Be the first to register an asset!</p>
+              )}
+              {filterAddress && (
+                <Button onClick={() => setFilterAddress(null)} variant="link" className="font-mono text-cyan-400">
+                  Show All Proofs
+                </Button>
+              )}
             </motion.div>
           )}
 
