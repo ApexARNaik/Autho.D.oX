@@ -171,6 +171,9 @@ export default function Home() {
         contentCid,
         metadataCid,
         chatLink || ""
+        {
+          gasLimit: 800000, // Explicitly set a high gas limit for file uploads
+        }
       );
       
       toast.info("Waiting for confirmation...");
