@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 // Use the same Pinata gateway as your gallery
-const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
+const IPFS_GATEWAY = "https://cloudflare-ipfs.com/ipfs/";
 
 export function IpfsContent({ cid }: { cid: string }) {
   const [content, setContent] = useState("");
