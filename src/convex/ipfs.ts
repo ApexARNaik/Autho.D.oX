@@ -17,6 +17,7 @@ export const uploadToCID = action({
     fileName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    console.log("IPFS ACTION SAYS KEY IS:", process.env.PINATA_JWT); // <-- ADD THIS LINE
     try {
       // Case 1: Only text
       if (args.text && !args.fileData) {
