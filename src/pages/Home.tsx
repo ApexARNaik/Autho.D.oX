@@ -170,7 +170,7 @@ export default function Home() {
         promptCid,
         contentCid,
         metadataCid,
-        chatLink || ""
+        chatLink || "",
         {
           gasLimit: 800000, // Explicitly set a high gas limit for file uploads
         }
