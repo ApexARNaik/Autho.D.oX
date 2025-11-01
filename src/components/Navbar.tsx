@@ -64,7 +64,7 @@ export function Navbar() {
           </Link>
 
           {/* Navigation Links */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-10">
             <Link to="/">
               <motion.span
                 className={`text-sm font-mono tracking-wide cursor-pointer transition-colors ${
