@@ -489,3 +489,5 @@ export default function Home() {
     </div>
   );
 }
+
+// Helper function to convert File to base64
