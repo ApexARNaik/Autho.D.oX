@@ -13,6 +13,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { IpfsContent } from "@/components/IpfsContent";
 
 export default function Home() {
   const [promptText, setPromptText] = useState("");
