@@ -20,34 +20,44 @@ export function useWallet() {
   const [isLoading, setIsLoading] = useState(false);
   const [manuallyDisconnected, setManuallyDisconnected] = useState(false);
 
-  const connectWallet = async () => {
-    if (typeof window.ethereum === "undefined") {
-      throw new Error("Please install MetaMask or another Web3 wallet");
-    }
+  // File: src/hooks/use-wallet.ts
 
-    setIsLoading(true);
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
-      const signer = await provider.getSigner();
-      const network = await provider.getNetwork();
+const connectWallet = async () => {
+  if (typeof window.ethereum === "undefined") {
+    throw new Error("Please install MetaMask or another Web3 wallet");
+  }
 
-      setWallet({
-        address: accounts[0],
-        isConnected: true,
-        chainId: Number(network.chainId),
-        provider,
-        signer,
-      });
-      setManuallyDisconnected(false);
-      localStorage.removeItem("walletManuallyDisconnected");
-    } catch (error) {
-      console.error("Failed to connect wallet:", error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  setIsLoading(true);
+  try {
+    // --- MODIFIED FLOW START ---
+    // 1. Explicitly request the accounts/permission via the raw Metamask API.
+    //    This is the most direct call to Metamask to trigger the pop-up.
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+    // 2. Set up Ethers objects using the now-connected provider.
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+
+    setWallet({
+      address: accounts[0],
+      isConnected: true,
+      chainId: Number(network.chainId),
+      provider,
+      signer,
+    });
+    // --- MODIFIED FLOW END ---
+
+    // Clear manual disconnection flag to allow page-load reconnects in the future
+    setManuallyDisconnected(false);
+    localStorage.removeItem("walletManuallyDisconnected"); 
+  } catch (error) {
+    console.error("Failed to connect wallet:", error);
+    throw error;
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const disconnectWallet = () => {
     setWallet({
