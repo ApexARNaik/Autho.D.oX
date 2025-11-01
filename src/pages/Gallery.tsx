@@ -3,13 +3,16 @@ import { Navbar } from "@/components/Navbar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/hooks/use-wallet";
-import { formatAddress, formatTimestamp, getExplorerUrl } from "@/lib/web3";
+import { CONTRACT_ABI, CONTRACT_ADDRESS, formatAddress, formatTimestamp, getExplorerUrl } from "@/lib/web3";
 import { motion } from "framer-motion";
-import { Database, ExternalLink, Loader2, User, Clock, Shield, Link as LinkIcon } from "lucide-react";
+import { Database, ExternalLink, Loader2, User, Clock, Shield, Link as LinkIcon, AlertTriangle } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { IpfsContent } from "@/components/IpfsContent";
+import { useState, useEffect } from "react";
+import { ethers } from "ethers";
+import { IpfsContent } from "@/components/IpfsContent"; // We are reusing the component from our last fix
 
+// This interface now includes txHash (which can be empty for old proofs)
 interface RegisteredAsset {
   promptCid: string;
   contentCid: string;
@@ -18,17 +21,107 @@ interface RegisteredAsset {
   author: string;
   timestamp: number;
   tokenId: number;
-  txHash: string;
+  txHash: string; // Will be blank for old proofs
 }
 
 export default function Gallery() {
-  const { chainId, isConnected } = useWallet();
+  const { chainId, provider, isConnected } = useWallet(); // Get the provider from the wallet
   
-  // Load proofs from Convex database (much faster than blockchain)
+  // 1. Get NEW proofs from our fast Convex cache
   const cachedProofs = useQuery(api.web3.getAllProofs);
   
-  const isLoading = cachedProofs === undefined;
-  const assets: RegisteredAsset[] = cachedProofs || [];
+  // 2. Create state to hold OLD proofs we find on the blockchain
+  const [oldProofs, setOldProofs] = useState<RegisteredAsset[]>([]);
+  const [isBlockchainLoading, setIsBlockchainLoading] = useState(true);
+
+  // 3. This effect runs when the wallet connects and provider is available
+  useEffect(() => {
+    
+    // Function to read all old proofs directly from the smart contract
+    const fetchOldProofs = async () => {
+      if (!provider) {
+        setIsBlockchainLoading(false);
+        return;
+      }
+      
+      console.log("Fetching old proofs from blockchain...");
+      setIsBlockchainLoading(true);
+
+      try {
+        const registryContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+        
+        // We need the NFT contract to find out the total supply
+        const nftContractAddress = await registryContract.nftContract();
+        const nftContractABI = [
+          {
+            "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+            "name": "ownerOf",
+            "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+            "stateMutability": "view",
+            "type": "function"
+          }
+        ];
+        const nftContract = new ethers.Contract(nftContractAddress, nftContractABI, provider);
+
+        // Loop to find the total count
+        let totalSupply = 0;
+        while (true) {
+          try {
+            await nftContract.ownerOf(totalSupply);
+            totalSupply++;
+          } catch (e) {
+            break; // Stop when ownerOf fails (we found the end)
+          }
+        }
+        
+        console.log(`Found ${totalSupply} total NFTs on-chain.`);
+
+        const foundProofs: RegisteredAsset[] = [];
+        for (let i = 0; i < totalSupply; i++) {
+          const proof = await registryContract.proofData(i);
+          
+          // Format the on-chain data to match our 'RegisteredAsset' type
+          foundProofs.push({
+            tokenId: i,
+            promptCid: proof.promptCid,
+            contentCid: proof.contentCid,
+            metadataUri: proof.metadataUri,
+            optionalChatLink: proof.optionalChatLink || "",
+            author: proof.author,
+            timestamp: Number(proof.timestamp),
+            txHash: "", // Set txHash to empty, as we don't have it
+          });
+        }
+        
+        setOldProofs(foundProofs);
+        console.log("Finished fetching old proofs.");
+
+      } catch (error) {
+        console.error("Error fetching old proofs:", error);
+      } finally {
+        setIsBlockchainLoading(false);
+      }
+    };
+
+    fetchOldProofs();
+  }, [provider]); // This whole function runs when 'provider' changes
+
+  // 4. Combine and de-duplicate the lists
+  const getCombinedAssets = () => {
+    const newProofs = cachedProofs || [];
+    
+    // Create a Set of token IDs we already have from the cache
+    const newTokenIds = new Set(newProofs.map(p => p.tokenId));
+    
+    // Filter the old proofs to only include ones we *don't* already have
+    const uniqueOldProofs = oldProofs.filter(p => !newTokenIds.has(p.tokenId));
+    
+    // Combine the lists and sort by tokenId (newest first)
+    return [...newProofs, ...uniqueOldProofs].sort((a, b) => b.tokenId - a.tokenId);
+  };
+
+  const assets: RegisteredAsset[] = getCombinedAssets();
+  const isLoading = cachedProofs === undefined && isBlockchainLoading;
 
   return (
     <div className="min-h-screen">
@@ -133,7 +226,7 @@ export default function Gallery() {
                           <span className="font-mono text-gray-400">Prompt:</span>
                         </div>
                         <IpfsContent cid={asset.promptCid} />
-                       </div>
+                      </div>
 
                       {/* AI Response Content */}
                       {asset.contentCid && (
@@ -165,14 +258,20 @@ export default function Gallery() {
                         <Button
                           asChild
                           className="w-full bg-gradient-to-r from-cyan-500/20 to-pink-500/20 hover:from-cyan-500/30 hover:to-pink-500/30 border border-cyan-400/50 text-cyan-400 font-mono text-xs"
+                          // Only enable the button if the txHash exists
+                          disabled={!asset.txHash} 
                         >
                           <a
                             href={getExplorerUrl(asset.txHash, chainId || 80002)}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            <ExternalLink className="mr-2 h-3 w-3" />
-                            VERIFY ON EXPLORER
+                            {asset.txHash ? (
+                              <ExternalLink className="mr-2 h-3 w-3" />
+                            ) : (
+                              <AlertTriangle className="mr-2 h-3 w-3" />
+                            )}
+                            {asset.txHash ? "VERIFY ON EXPLORER" : "NO TX HASH (OLD PROOF)"}
                           </a>
                         </Button>
                       </motion.div>
