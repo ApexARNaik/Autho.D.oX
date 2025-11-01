@@ -97,7 +97,7 @@ export default function Home() {
 
         // --- THIS IS THE FIX ---
         // Check if the network ID is correct
-        if (network.chainId !== correctChainId) {
+        if (Number(network.chainId) !== correctChainId) {
           toast.error("Wrong Network", {
             description: `Please switch to Polygon Amoy Testnet (Chain ID: ${correctChainId}) in your wallet.`
           });
